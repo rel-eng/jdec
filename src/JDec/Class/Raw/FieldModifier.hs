@@ -21,4 +21,4 @@ data FieldModifier = PublicFieldModifier -- ^ Declared public; may be accessed f
   | TransientFieldModifier -- ^ Declared transient; not written or read by a persistent object manager.
   | SyntheticFieldModifier -- ^ Declared synthetic; not present in the source code.
   | EnumFieldModifier -- ^ Declared as an element of an enum.
-  deriving Show
+  deriving (Show, Eq, Ord)

@@ -8,6 +8,7 @@ import JDec.Class.Raw.ConstantPoolIndex(ConstantPoolIndex(ConstantPoolIndex))
 import JDec.Class.Parse.ParseConstantPoolEntry(deserializeConstantPoolEntry)
 import JDec.Class.Raw.ConstantPoolEntry(ConstantPoolEntry, ConstantPoolEntry(LongConstantPoolEntry, DoubleConstantPoolEntry))
 import JDec.Class.Raw.ClassModifier(ClassModifier(PublicClassModifier, FinalClassModifier, SuperClassModifier, InterfaceClassModifier, AbstractClassModifier, SyntheticClassModifier, AnnotationClassModifier, EnumClassModifier))
+import JDec.Class.Parse.ParseField(deserializeField)
 
 import Data.Binary.Get(Get, getWord32be, getWord16be)
 import Data.Map as Map (Map, empty, insert)
@@ -16,7 +17,8 @@ import Data.Word(Word16)
 import Data.Bits ((.&.))
 import Control.Monad(replicateM)
 
-deserializeClass :: Get (Class)
+-- | Deserialize class
+deserializeClass :: Get (Class) -- ^ Class
 deserializeClass = do
   magic <- getWord32be
   if magic == 0xCAFEBABE
@@ -30,10 +32,16 @@ deserializeClass = do
        superClassIndex <- getWord16be
        interfacesCount <- getWord16be
        interfaceIndexes <- replicateM (fromIntegral interfacesCount) (fmap (ConstantPoolIndex . toInteger) getWord16be)
-       return $! Class (ClassVersion (toInteger minorVersion) (toInteger majorVersion)) constantPoolEntries (deserializeAccessFlags accessFlagsWord) (ConstantPoolIndex (toInteger thisClassIndex)) (ConstantPoolIndex (toInteger superClassIndex)) interfaceIndexes [] [] []
+       fieldsCount <- getWord16be
+       fields <- replicateM (fromIntegral fieldsCount) (deserializeField constantPoolEntries)
+       return $! Class (ClassVersion (toInteger minorVersion) (toInteger majorVersion)) constantPoolEntries (deserializeAccessFlags accessFlagsWord) (ConstantPoolIndex (toInteger thisClassIndex)) (ConstantPoolIndex (toInteger superClassIndex)) interfaceIndexes fields [] []
      else fail "Invalid file header"
 
-readConstantPool :: Map ConstantPoolIndex ConstantPoolEntry -> Integer -> Integer -> Get (Map ConstantPoolIndex ConstantPoolEntry)
+-- ^ Read all remaining constant pool entries
+readConstantPool :: Map ConstantPoolIndex ConstantPoolEntry -- ^ Map of constant pool entries read so far
+  -> Integer -- ^ Entries left to read
+  -> Integer -- ^ Next entry index
+  -> Get (Map ConstantPoolIndex ConstantPoolEntry) -- ^ Map of constant pool entries
 readConstantPool entries entriesLeftToRead entryIndex
   | entriesLeftToRead == 0 = return $! entries
   | otherwise = do
@@ -43,5 +51,7 @@ readConstantPool entries entriesLeftToRead entryIndex
       DoubleConstantPoolEntry _ -> readConstantPool (Map.insert (ConstantPoolIndex entryIndex) entry entries) (entriesLeftToRead - 2) (entryIndex + 2)
       _ -> readConstantPool (Map.insert (ConstantPoolIndex entryIndex) entry entries) (entriesLeftToRead - 1) (entryIndex + 1)
 
-deserializeAccessFlags :: Word16 -> Set ClassModifier
+-- | Deserialize class access flags
+deserializeAccessFlags :: Word16 -- ^ Word
+  -> Set ClassModifier -- ^ Flags set
 deserializeAccessFlags word = foldl (\s (x,y) -> if ((word .&. y) /= (0x0000 :: Word16)) then Set.insert x s else s) (Set.empty) [(PublicClassModifier, 0x0001 :: Word16), (FinalClassModifier, 0x0010 :: Word16), (SuperClassModifier, 0x0020 :: Word16), (InterfaceClassModifier, 0x0200 :: Word16), (AbstractClassModifier, 0x0400 :: Word16), (SyntheticClassModifier, 0x1000 :: Word16), (AnnotationClassModifier, 0x2000 :: Word16), (EnumClassModifier, 0x4000 :: Word16)]
