@@ -27,4 +27,4 @@ data MethodModifier = PublicMethodModifier -- ^ Declared public; may be accessed
   | AbstractMethodModifier -- ^ Declared abstract; no implementation is provided.
   | StrictMethodModifier -- ^ Declared strictfp; floating-point mode is FP-strict.
   | SyntheticMethodModifier -- ^ Declared synthetic; not present in the source code.
-  deriving Show
+  deriving (Show, Eq, Ord)

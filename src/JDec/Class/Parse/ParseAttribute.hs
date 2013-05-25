@@ -37,9 +37,7 @@ parseAttribute constantPool nameIndex attributeLength =
             "Deprecated" -> parseDeprecated attributeLength
             _ -> skipAttribute attributeLength
         _ -> skipAttribute attributeLength
-    Nothing -> do
-      _ <- getLazyByteString attributeLength
-      return $! Nothing
+    Nothing -> skipAttribute attributeLength
 
 -- | Parse constant value attribute-specific data
 parseConstantValue :: Int64 -- ^ Attribute length

@@ -9,6 +9,8 @@ import JDec.Class.Parse.ParseConstantPoolEntry(deserializeConstantPoolEntry)
 import JDec.Class.Raw.ConstantPoolEntry(ConstantPoolEntry, ConstantPoolEntry(LongConstantPoolEntry, DoubleConstantPoolEntry))
 import JDec.Class.Raw.ClassModifier(ClassModifier(PublicClassModifier, FinalClassModifier, SuperClassModifier, InterfaceClassModifier, AbstractClassModifier, SyntheticClassModifier, AnnotationClassModifier, EnumClassModifier))
 import JDec.Class.Parse.ParseField(deserializeField)
+import JDec.Class.Parse.ParseMethod(deserializeMethod)
+import JDec.Class.Parse.ParseAttribute(deserializeAttribute)
 
 import Data.Binary.Get(Get, getWord32be, getWord16be)
 import Data.Map as Map (Map, empty, insert)
@@ -16,6 +18,7 @@ import Data.Set as Set (Set, empty, insert)
 import Data.Word(Word16)
 import Data.Bits ((.&.))
 import Control.Monad(replicateM)
+import Data.Maybe(catMaybes)
 
 -- | Deserialize class
 deserializeClass :: Get (Class) -- ^ Class
@@ -34,7 +37,11 @@ deserializeClass = do
        interfaceIndexes <- replicateM (fromIntegral interfacesCount) (fmap (ConstantPoolIndex . toInteger) getWord16be)
        fieldsCount <- getWord16be
        fields <- replicateM (fromIntegral fieldsCount) (deserializeField constantPoolEntries)
-       return $! Class (ClassVersion (toInteger minorVersion) (toInteger majorVersion)) constantPoolEntries (deserializeAccessFlags accessFlagsWord) (ConstantPoolIndex (toInteger thisClassIndex)) (ConstantPoolIndex (toInteger superClassIndex)) interfaceIndexes fields [] []
+       methodsCount <- getWord16be
+       methods <- replicateM (fromIntegral methodsCount) (deserializeMethod constantPoolEntries)
+       attributesCount <- getWord16be
+       attributes <- replicateM (fromIntegral attributesCount) (deserializeAttribute constantPoolEntries)
+       return $! Class (ClassVersion (toInteger minorVersion) (toInteger majorVersion)) constantPoolEntries (deserializeAccessFlags accessFlagsWord) (ConstantPoolIndex (toInteger thisClassIndex)) (ConstantPoolIndex (toInteger superClassIndex)) interfaceIndexes fields methods (catMaybes attributes)
      else fail "Invalid file header"
 
 -- ^ Read all remaining constant pool entries
