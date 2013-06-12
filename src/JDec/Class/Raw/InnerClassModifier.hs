@@ -23,4 +23,4 @@ data InnerClassModifier = PublicInnerClassModifier -- ^ Marked or implicitly pub
   | SyntheticInnerClassModifier -- ^ Declared synthetic; not present in the source code.
   | AnnotationInnerClassModifier -- ^ Declared as an annotation type.
   | EnumInnerClassModifier -- ^ Declared as an enum type.
-  deriving Show
+  deriving (Show, Eq, Ord)

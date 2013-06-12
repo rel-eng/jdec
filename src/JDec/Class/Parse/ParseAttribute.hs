@@ -2,19 +2,24 @@ module JDec.Class.Parse.ParseAttribute (
 deserializeAttribute
 ) where 
 
-import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute, EnclosingMethodAttribute, SourceFileAttribute, StackMapTableAttribute, ExceptionsAttribute, CodeAttribute))
+import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute, EnclosingMethodAttribute, SourceFileAttribute, StackMapTableAttribute, ExceptionsAttribute, CodeAttribute, InnerClassesAttribute))
 import JDec.Class.Raw.ConstantPoolIndex(ConstantPoolIndex(ConstantPoolIndex))
 import JDec.Class.Raw.ConstantPoolEntry (ConstantPoolEntry(UTF8ConstantPoolEntry))
 import JDec.Class.Raw.StackMapFrame (StackMapFrame(SameFrame, SameLocalsOneStackItemFrame, SameLocalsOneStackItemFrameExtended, ChopFrame, SameFrameExtended, AppendFrame, FullFrame))
 import JDec.Class.Raw.VerificationTypeInfo (VerificationTypeInfo(TopVariableInfo, IntegerVariableInfo, FloatVariableInfo, LongVariableInfo, DoubleVariableInfo, NullVariableInfo, UninitializedThisVariableInfo, ObjectVariableInfo, UninitializedVariableInfo))
 import JDec.Class.Raw.ExceptionHandlerInfo (ExceptionHandlerInfo(ExceptionHandlerInfo))
+import JDec.Class.Raw.InnerClassInfo (InnerClassInfo(InnerClassInfo))
+import JDec.Class.Raw.InnerClassModifier (InnerClassModifier(PublicInnerClassModifier, PrivateInnerClassModifier, ProtectedInnerClassModifier, StaticInnerClassModifier, FinalInnerClassModifier, InterfaceInnerClassModifier, AbstractInnerClassModifier, SyntheticInnerClassModifier, AnnotationInnerClassModifier, EnumInnerClassModifier))
 
 import Data.Binary.Get(Get, getWord16be, getWord32be, getLazyByteString, runGet, getWord8)
 import Data.Map as Map (Map, lookup)
 import Data.Text (unpack)
 import Data.Int(Int64)
+import Data.Word(Word16)
 import Control.Monad(when, void, replicateM)
 import Data.Maybe(catMaybes)
+import Data.Set as Set (empty, insert)
+import Data.Bits ((.&.))
 
 -- | Deserialize one attribute
 deserializeAttribute :: Map ConstantPoolIndex ConstantPoolEntry -- ^ Constant pool
@@ -44,6 +49,7 @@ parseAttribute constantPool nameIndex attributeLength =
             "StackMapTable" -> parseStackMapTable attributeLength
             "Exceptions" -> parseExceptions attributeLength
             "Code" -> parseCode attributeLength constantPool
+            "InnerClasses" -> parseInnerClasses attributeLength
             _ -> skipAttribute attributeLength
         _ -> skipAttribute attributeLength
     Nothing -> skipAttribute attributeLength
@@ -154,7 +160,7 @@ parseStackMapTable attributeLength =
         _ -> fail ("Unknown variable info type " ++ (show typeTag))
 
 -- | Parse exceptions attribute-specific data
-parseExceptions :: Int64  -- ^ Attribute length
+parseExceptions :: Int64 -- ^ Attribute length
   -> Get (Maybe Attribute) -- ^ Attribute, if any
 parseExceptions attributeLength = 
   fmap (runGet deserializeExceptions) (getLazyByteString attributeLength)
@@ -164,9 +170,10 @@ parseExceptions attributeLength =
       exceptionIndexes <- replicateM (fromIntegral exceptionsCount) (fmap (ConstantPoolIndex . toInteger) (getWord16be))
       return $! Just (ExceptionsAttribute exceptionIndexes)
 
-parseCode :: Int64
-  -> Map ConstantPoolIndex ConstantPoolEntry
-  -> Get (Maybe Attribute)
+-- | Parse code attribute-specific data
+parseCode :: Int64 -- ^ Attribute length
+  -> Map ConstantPoolIndex ConstantPoolEntry -- ^ Constant pool
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
 parseCode attributeLength constantPool =
   fmap (runGet deserializeCode) (getLazyByteString attributeLength)
   where
@@ -186,6 +193,24 @@ parseCode attributeLength constantPool =
       handlerPC <- getWord16be
       catchTypeIndex <- getWord16be
       return $! ExceptionHandlerInfo (toInteger startPC) (toInteger endPC) (toInteger handlerPC) (ConstantPoolIndex (toInteger catchTypeIndex))
+
+-- | Parse inner classes attribute-specific data
+parseInnerClasses :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseInnerClasses attributeLength =
+  fmap (runGet deserializeInnerClasses) (getLazyByteString attributeLength)
+  where
+    deserializeInnerClasses = do
+      classesCount <- getWord16be
+      innerClasses <- replicateM (fromIntegral classesCount) deserializeInnerClassInfo
+      return $! Just (InnerClassesAttribute innerClasses)
+    deserializeInnerClassInfo = do
+      innerClassInfoIndex <- getWord16be
+      outerClassInfoIndex <- getWord16be
+      innerNameIndex <- getWord16be
+      innerClassAccessFlags <- getWord16be
+      return $! InnerClassInfo (ConstantPoolIndex (toInteger innerClassInfoIndex)) (ConstantPoolIndex (toInteger outerClassInfoIndex)) (ConstantPoolIndex (toInteger innerNameIndex)) (deserializeInnerClassAccessFlags innerClassAccessFlags)
+    deserializeInnerClassAccessFlags word = foldl (\s (x,y) -> if ((word .&. y) /= (0x0000 :: Word16)) then Set.insert x s else s) (Set.empty) [(PublicInnerClassModifier, 0x0001 :: Word16), (PrivateInnerClassModifier, 0x0002 :: Word16), (ProtectedInnerClassModifier, 0x0004 :: Word16), (StaticInnerClassModifier, 0x0008 :: Word16), (FinalInnerClassModifier, 0x0010 :: Word16), (InterfaceInnerClassModifier, 0x0200 :: Word16), (AbstractInnerClassModifier, 0x0400 :: Word16), (SyntheticInnerClassModifier, 0x1000 :: Word16), (AnnotationInnerClassModifier, 0x2000 :: Word16), (EnumInnerClassModifier, 0x4000 :: Word16)]
 
 -- | Skip attribute
 skipAttribute :: Int64 -- ^ Attribute length
