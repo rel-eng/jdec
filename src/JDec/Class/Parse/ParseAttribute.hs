@@ -2,17 +2,19 @@ module JDec.Class.Parse.ParseAttribute (
 deserializeAttribute
 ) where 
 
-import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute, EnclosingMethodAttribute, SourceFileAttribute, StackMapTableAttribute))
+import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute, EnclosingMethodAttribute, SourceFileAttribute, StackMapTableAttribute, ExceptionsAttribute, CodeAttribute))
 import JDec.Class.Raw.ConstantPoolIndex(ConstantPoolIndex(ConstantPoolIndex))
 import JDec.Class.Raw.ConstantPoolEntry (ConstantPoolEntry(UTF8ConstantPoolEntry))
 import JDec.Class.Raw.StackMapFrame (StackMapFrame(SameFrame, SameLocalsOneStackItemFrame, SameLocalsOneStackItemFrameExtended, ChopFrame, SameFrameExtended, AppendFrame, FullFrame))
 import JDec.Class.Raw.VerificationTypeInfo (VerificationTypeInfo(TopVariableInfo, IntegerVariableInfo, FloatVariableInfo, LongVariableInfo, DoubleVariableInfo, NullVariableInfo, UninitializedThisVariableInfo, ObjectVariableInfo, UninitializedVariableInfo))
+import JDec.Class.Raw.ExceptionHandlerInfo (ExceptionHandlerInfo(ExceptionHandlerInfo))
 
 import Data.Binary.Get(Get, getWord16be, getWord32be, getLazyByteString, runGet, getWord8)
 import Data.Map as Map (Map, lookup)
 import Data.Text (unpack)
 import Data.Int(Int64)
 import Control.Monad(when, void, replicateM)
+import Data.Maybe(catMaybes)
 
 -- | Deserialize one attribute
 deserializeAttribute :: Map ConstantPoolIndex ConstantPoolEntry -- ^ Constant pool
@@ -40,6 +42,8 @@ parseAttribute constantPool nameIndex attributeLength =
             "EnclosingMethod" -> if attributeLength >= 4 then parseEnclosingMethod attributeLength else skipAttribute attributeLength
             "SourceFile" -> if attributeLength >= 2 then parseSourceFile attributeLength else skipAttribute attributeLength
             "StackMapTable" -> parseStackMapTable attributeLength
+            "Exceptions" -> parseExceptions attributeLength
+            "Code" -> parseCode attributeLength constantPool
             _ -> skipAttribute attributeLength
         _ -> skipAttribute attributeLength
     Nothing -> skipAttribute attributeLength
@@ -123,14 +127,14 @@ parseStackMapTable attributeLength =
         offsetDelta <- getWord16be
         locals <- replicateM (fromIntegral (tag - 251)) deserializeVerificationTypeInfo
         return $! AppendFrame (toInteger offsetDelta) locals
-      | tag == 251 = do
+      | tag == 255 = do
         offsetDelta <- getWord16be
         numberOfLocals <- getWord16be
         locals <- replicateM (fromIntegral numberOfLocals) deserializeVerificationTypeInfo
         numberOfStackItems <- getWord16be
         stack <- replicateM (fromIntegral numberOfStackItems) deserializeVerificationTypeInfo
         return $! FullFrame (toInteger offsetDelta) locals stack
-      | otherwise = fail ("Unknown frame type" ++ (show tag))
+      | otherwise = fail ("Unknown frame type " ++ (show tag))
     deserializeVerificationTypeInfo = do
       typeTag <- getWord8
       case typeTag of
@@ -147,7 +151,41 @@ parseStackMapTable attributeLength =
         8 -> do
           codeOffset <- getWord16be
           return $! UninitializedVariableInfo (toInteger codeOffset)
-        _ -> fail ("Unknown variable info type" ++ (show typeTag))
+        _ -> fail ("Unknown variable info type " ++ (show typeTag))
+
+-- | Parse exceptions attribute-specific data
+parseExceptions :: Int64  -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseExceptions attributeLength = 
+  fmap (runGet deserializeExceptions) (getLazyByteString attributeLength)
+  where
+    deserializeExceptions = do
+      exceptionsCount <- getWord16be
+      exceptionIndexes <- replicateM (fromIntegral exceptionsCount) (fmap (ConstantPoolIndex . toInteger) (getWord16be))
+      return $! Just (ExceptionsAttribute exceptionIndexes)
+
+parseCode :: Int64
+  -> Map ConstantPoolIndex ConstantPoolEntry
+  -> Get (Maybe Attribute)
+parseCode attributeLength constantPool =
+  fmap (runGet deserializeCode) (getLazyByteString attributeLength)
+  where
+    deserializeCode = do
+      maxStack <- getWord16be
+      maxLocals <- getWord16be
+      codeLength <- getWord32be
+      code <- getLazyByteString (fromIntegral codeLength)
+      exceptionHandlersCount <- getWord16be
+      exceptionHandlers <- replicateM (fromIntegral exceptionHandlersCount) deserializeExceptionHandlerInfo
+      attributesCount <- getWord16be
+      attributes <- replicateM (fromIntegral attributesCount) (deserializeAttribute constantPool)
+      return $! Just (CodeAttribute (fromIntegral maxStack) (fromIntegral maxLocals) [] exceptionHandlers (catMaybes attributes))
+    deserializeExceptionHandlerInfo = do
+      startPC <- getWord16be
+      endPC <- getWord16be
+      handlerPC <- getWord16be
+      catchTypeIndex <- getWord16be
+      return $! ExceptionHandlerInfo (toInteger startPC) (toInteger endPC) (toInteger handlerPC) (ConstantPoolIndex (toInteger catchTypeIndex))
 
 -- | Skip attribute
 skipAttribute :: Int64 -- ^ Attribute length
