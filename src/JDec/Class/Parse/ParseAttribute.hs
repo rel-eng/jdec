@@ -2,15 +2,17 @@ module JDec.Class.Parse.ParseAttribute (
 deserializeAttribute
 ) where 
 
-import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute))
+import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute, EnclosingMethodAttribute, SourceFileAttribute, StackMapTableAttribute))
 import JDec.Class.Raw.ConstantPoolIndex(ConstantPoolIndex(ConstantPoolIndex))
 import JDec.Class.Raw.ConstantPoolEntry (ConstantPoolEntry(UTF8ConstantPoolEntry))
+import JDec.Class.Raw.StackMapFrame (StackMapFrame(SameFrame, SameLocalsOneStackItemFrame, SameLocalsOneStackItemFrameExtended, ChopFrame, SameFrameExtended, AppendFrame, FullFrame))
+import JDec.Class.Raw.VerificationTypeInfo (VerificationTypeInfo(TopVariableInfo, IntegerVariableInfo, FloatVariableInfo, LongVariableInfo, DoubleVariableInfo, NullVariableInfo, UninitializedThisVariableInfo, ObjectVariableInfo, UninitializedVariableInfo))
 
-import Data.Binary.Get(Get, getWord16be, getWord32be, getLazyByteString)
+import Data.Binary.Get(Get, getWord16be, getWord32be, getLazyByteString, runGet, getWord8)
 import Data.Map as Map (Map, lookup)
 import Data.Text (unpack)
 import Data.Int(Int64)
-import Control.Monad(when, void)
+import Control.Monad(when, void, replicateM)
 
 -- | Deserialize one attribute
 deserializeAttribute :: Map ConstantPoolIndex ConstantPoolEntry -- ^ Constant pool
@@ -35,6 +37,9 @@ parseAttribute constantPool nameIndex attributeLength =
             "Synthetic" -> parseSynthetic attributeLength
             "Signature" -> if attributeLength >= 2 then parseSignatureValue attributeLength else skipAttribute attributeLength
             "Deprecated" -> parseDeprecated attributeLength
+            "EnclosingMethod" -> if attributeLength >= 4 then parseEnclosingMethod attributeLength else skipAttribute attributeLength
+            "SourceFile" -> if attributeLength >= 2 then parseSourceFile attributeLength else skipAttribute attributeLength
+            "StackMapTable" -> parseStackMapTable attributeLength
             _ -> skipAttribute attributeLength
         _ -> skipAttribute attributeLength
     Nothing -> skipAttribute attributeLength
@@ -68,6 +73,81 @@ parseDeprecated :: Int64 -- ^ Attribute length
 parseDeprecated attributeLength = do
  when (attributeLength > 0) (void (getLazyByteString (attributeLength)))
  return $! Just DeprecatedAttribute
+
+-- | Parse enclosing method attribute-specific data
+parseEnclosingMethod :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseEnclosingMethod attributeLength = do
+ classIndex <- getWord16be
+ methodIndex <- getWord16be
+ when (attributeLength > 4) (void (getLazyByteString (attributeLength - 4)))
+ return $! Just (EnclosingMethodAttribute (ConstantPoolIndex (toInteger classIndex)) (ConstantPoolIndex (toInteger methodIndex)))
+
+-- | Parse source file attribute-specific data
+parseSourceFile :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseSourceFile attributeLength = do
+ sourceFileIndex <- getWord16be
+ when (attributeLength > 2) (void (getLazyByteString (attributeLength - 2)))
+ return $! Just (SourceFileAttribute (ConstantPoolIndex (toInteger sourceFileIndex)))
+
+-- | Parse stack map table attribute-specific data
+parseStackMapTable :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseStackMapTable attributeLength = 
+  fmap (runGet deserializeStackMapTable) (getLazyByteString attributeLength)
+  where
+    deserializeStackMapTable = do
+      entriesCount <- getWord16be
+      frames <- replicateM (fromIntegral entriesCount) deserializeFrame
+      return $! Just (StackMapTableAttribute frames)
+    deserializeFrame = do
+      tag <- getWord8
+      parseFrame tag
+    parseFrame tag
+      | tag >= 0 && tag <= 63 = return $! SameFrame (toInteger tag)
+      | tag >= 64 && tag <= 127 = do
+        verificationTypeInfo <- deserializeVerificationTypeInfo
+        return $! SameLocalsOneStackItemFrame (toInteger (tag - 64)) verificationTypeInfo
+      | tag == 247 = do
+        offsetDelta <- getWord16be
+        verificationTypeInfo <- deserializeVerificationTypeInfo
+        return $! SameLocalsOneStackItemFrameExtended (toInteger offsetDelta) verificationTypeInfo
+      | tag >= 248 && tag <= 250 = do
+        offsetDelta <- getWord16be
+        return $! ChopFrame (toInteger (251 - tag)) (toInteger offsetDelta)
+      | tag == 251 = do
+        offsetDelta <- getWord16be
+        return $! SameFrameExtended (toInteger offsetDelta)
+      | tag >= 252 && tag <= 254 = do
+        offsetDelta <- getWord16be
+        locals <- replicateM (fromIntegral (tag - 251)) deserializeVerificationTypeInfo
+        return $! AppendFrame (toInteger offsetDelta) locals
+      | tag == 251 = do
+        offsetDelta <- getWord16be
+        numberOfLocals <- getWord16be
+        locals <- replicateM (fromIntegral numberOfLocals) deserializeVerificationTypeInfo
+        numberOfStackItems <- getWord16be
+        stack <- replicateM (fromIntegral numberOfStackItems) deserializeVerificationTypeInfo
+        return $! FullFrame (toInteger offsetDelta) locals stack
+      | otherwise = fail ("Unknown frame type" ++ (show tag))
+    deserializeVerificationTypeInfo = do
+      typeTag <- getWord8
+      case typeTag of
+        0 -> return $! TopVariableInfo
+        1 -> return $! IntegerVariableInfo
+        2 -> return $! FloatVariableInfo
+        3 -> return $! DoubleVariableInfo
+        4 -> return $! LongVariableInfo
+        5 -> return $! NullVariableInfo
+        6 -> return $! UninitializedThisVariableInfo
+        7 -> do
+          classIndex <- getWord16be
+          return $! ObjectVariableInfo (ConstantPoolIndex (toInteger classIndex))
+        8 -> do
+          codeOffset <- getWord16be
+          return $! UninitializedVariableInfo (toInteger codeOffset)
+        _ -> fail ("Unknown variable info type" ++ (show typeTag))
 
 -- | Skip attribute
 skipAttribute :: Int64 -- ^ Attribute length
