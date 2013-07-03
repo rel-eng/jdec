@@ -2,7 +2,7 @@ module JDec.Class.Parse.ParseAttribute (
 deserializeAttribute
 ) where 
 
-import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute, EnclosingMethodAttribute, SourceFileAttribute, StackMapTableAttribute, ExceptionsAttribute, CodeAttribute, InnerClassesAttribute))
+import JDec.Class.Raw.Attribute (Attribute(ConstantValueAttribute, SyntheticAttribute, SignatureAttribute, DeprecatedAttribute, EnclosingMethodAttribute, SourceFileAttribute, StackMapTableAttribute, ExceptionsAttribute, CodeAttribute, InnerClassesAttribute, SourceDebugExtensionAttribute, LineNumberTableAttribute, LocalVariableTableAttribute, LocalVariableTypeTableAttribute, RuntimeVisibleAnnotationsAttribute, RuntimeInvisibleAnnotationsAttribute, RuntimeVisibleParameterAnnotationsAttribute, RuntimeInvisibleParameterAnnotationsAttribute, AnnotationDefaultAttribute, BootstrapMethodsAttribute))
 import JDec.Class.Raw.ConstantPoolIndex(ConstantPoolIndex(ConstantPoolIndex))
 import JDec.Class.Raw.ConstantPoolEntry (ConstantPoolEntry(UTF8ConstantPoolEntry))
 import JDec.Class.Raw.StackMapFrame (StackMapFrame(SameFrame, SameLocalsOneStackItemFrame, SameLocalsOneStackItemFrameExtended, ChopFrame, SameFrameExtended, AppendFrame, FullFrame))
@@ -10,6 +10,12 @@ import JDec.Class.Raw.VerificationTypeInfo (VerificationTypeInfo(TopVariableInfo
 import JDec.Class.Raw.ExceptionHandlerInfo (ExceptionHandlerInfo(ExceptionHandlerInfo))
 import JDec.Class.Raw.InnerClassInfo (InnerClassInfo(InnerClassInfo))
 import JDec.Class.Raw.InnerClassModifier (InnerClassModifier(PublicInnerClassModifier, PrivateInnerClassModifier, ProtectedInnerClassModifier, StaticInnerClassModifier, FinalInnerClassModifier, InterfaceInnerClassModifier, AbstractInnerClassModifier, SyntheticInnerClassModifier, AnnotationInnerClassModifier, EnumInnerClassModifier))
+import JDec.Class.Parse.ParseEncodedString (parseString)
+import JDec.Class.Raw.LineNumberInfo (LineNumberInfo(LineNumberInfo))
+import JDec.Class.Raw.LocalVariableInfo (LocalVariableInfo(LocalVariableInfo))
+import JDec.Class.Raw.LocalVariableTypeInfo (LocalVariableTypeInfo(LocalVariableTypeInfo))
+import JDec.Class.Parse.ParseAnnotation(deserializeAnnotation, deserializeAnnotationElementValue)
+import JDec.Class.Raw.BootstrapMethodInfo (BootstrapMethodInfo(BootstrapMethodInfo))
 
 import Data.Binary.Get(Get, getWord16be, getWord32be, getLazyByteString, runGet, getWord8)
 import Data.Map as Map (Map, lookup)
@@ -50,6 +56,16 @@ parseAttribute constantPool nameIndex attributeLength =
             "Exceptions" -> parseExceptions attributeLength
             "Code" -> parseCode attributeLength constantPool
             "InnerClasses" -> parseInnerClasses attributeLength
+            "SourceDebugExtension" -> parseSourceDebugExtension attributeLength
+            "LineNumberTable" -> parseLineNumberTable attributeLength
+            "LocalVariableTable" -> parseLocalVariableTable attributeLength
+            "LocalVariableTypeTable" -> parseLocalVariableTypeTable attributeLength
+            "RuntimeVisibleAnnotations" -> parseRuntimeVisibleAnnotations attributeLength
+            "RuntimeInvisibleAnnotations" -> parseRuntimeInvisibleAnnotations attributeLength
+            "RuntimeVisibleParameterAnnotations" -> parseRuntimeVisibleParameterAnnotations attributeLength
+            "RuntimeInvisibleParameterAnnotations" -> parseRuntimeInvisibleParameterAnnotations attributeLength
+            "AnnotationDefault" -> parseAnnotationDefault attributeLength
+            "BootstrapMethods" -> parseBootstrapMethods attributeLength
             _ -> skipAttribute attributeLength
         _ -> skipAttribute attributeLength
     Nothing -> skipAttribute attributeLength
@@ -66,7 +82,7 @@ parseConstantValue attributeLength = do
 parseSynthetic :: Int64 -- ^ Attribute length
   -> Get (Maybe Attribute) -- ^ Attribute, if any
 parseSynthetic attributeLength = do
- when (attributeLength > 0) (void (getLazyByteString (attributeLength)))
+ when (attributeLength > 0) (void (getLazyByteString attributeLength))
  return $! Just SyntheticAttribute
 
 -- | Parse signature attribute-specific data
@@ -81,7 +97,7 @@ parseSignatureValue attributeLength = do
 parseDeprecated :: Int64 -- ^ Attribute length
   -> Get (Maybe Attribute) -- ^ Attribute, if any
 parseDeprecated attributeLength = do
- when (attributeLength > 0) (void (getLazyByteString (attributeLength)))
+ when (attributeLength > 0) (void (getLazyByteString attributeLength))
  return $! Just DeprecatedAttribute
 
 -- | Parse enclosing method attribute-specific data
@@ -211,6 +227,140 @@ parseInnerClasses attributeLength =
       innerClassAccessFlags <- getWord16be
       return $! InnerClassInfo (ConstantPoolIndex (toInteger innerClassInfoIndex)) (ConstantPoolIndex (toInteger outerClassInfoIndex)) (ConstantPoolIndex (toInteger innerNameIndex)) (deserializeInnerClassAccessFlags innerClassAccessFlags)
     deserializeInnerClassAccessFlags word = foldl (\s (x,y) -> if ((word .&. y) /= (0x0000 :: Word16)) then Set.insert x s else s) (Set.empty) [(PublicInnerClassModifier, 0x0001 :: Word16), (PrivateInnerClassModifier, 0x0002 :: Word16), (ProtectedInnerClassModifier, 0x0004 :: Word16), (StaticInnerClassModifier, 0x0008 :: Word16), (FinalInnerClassModifier, 0x0010 :: Word16), (InterfaceInnerClassModifier, 0x0200 :: Word16), (AbstractInnerClassModifier, 0x0400 :: Word16), (SyntheticInnerClassModifier, 0x1000 :: Word16), (AnnotationInnerClassModifier, 0x2000 :: Word16), (EnumInnerClassModifier, 0x4000 :: Word16)]
+
+-- | Parse source debug extension attribute-specific data
+parseSourceDebugExtension :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseSourceDebugExtension attributeLength = do
+  bytes <- getLazyByteString attributeLength
+  return $! Just (SourceDebugExtensionAttribute (parseString bytes))
+
+-- | Parse line number table attribute-specific data
+parseLineNumberTable :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseLineNumberTable attributeLength =
+  fmap (runGet deserializeLineNumberTable) (getLazyByteString attributeLength)
+  where
+    deserializeLineNumberTable = do
+      entriesCount <- getWord16be
+      entries <- replicateM (fromIntegral entriesCount) deserializeLineNumberInfo
+      return $! Just (LineNumberTableAttribute entries)
+    deserializeLineNumberInfo = do
+      startPC <- getWord16be
+      lineNumber <- getWord16be
+      return $! LineNumberInfo (toInteger startPC) (toInteger lineNumber)
+
+-- | Parse local variable table attribute-specific data
+parseLocalVariableTable :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseLocalVariableTable attributeLength =
+  fmap (runGet deserializeLocalVaribleTable) (getLazyByteString attributeLength)
+  where
+    deserializeLocalVaribleTable = do
+      entriesCount <- getWord16be
+      entries <- replicateM (fromIntegral entriesCount) deserializeLocalVaribleInfo
+      return $! Just (LocalVariableTableAttribute entries)
+    deserializeLocalVaribleInfo = do
+      localVariableStartPC <- getWord16be
+      localVariableLength <- getWord16be
+      localVariableNameIndex <- getWord16be
+      localVariableDescriptorIndex <- getWord16be
+      localVariableIndex <- getWord16be
+      return $! LocalVariableInfo (toInteger localVariableStartPC) (toInteger localVariableLength) (ConstantPoolIndex (toInteger localVariableNameIndex)) (ConstantPoolIndex (toInteger localVariableDescriptorIndex)) (toInteger localVariableIndex)
+
+-- | Parse local variable type table attribute-specific data
+parseLocalVariableTypeTable :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseLocalVariableTypeTable attributeLength =
+  fmap (runGet deserializeLocalVaribleTypeTable) (getLazyByteString attributeLength)
+  where
+    deserializeLocalVaribleTypeTable = do
+      entriesCount <- getWord16be
+      entries <- replicateM (fromIntegral entriesCount) deserializeLocalVaribleTypeInfo
+      return $! Just (LocalVariableTypeTableAttribute entries)
+    deserializeLocalVaribleTypeInfo = do
+      localVariableStartPC <- getWord16be
+      localVariableLength <- getWord16be
+      localVariableNameIndex <- getWord16be
+      localVariableSignatureIndex <- getWord16be
+      localVariableIndex <- getWord16be
+      return $! LocalVariableTypeInfo (toInteger localVariableStartPC) (toInteger localVariableLength) (ConstantPoolIndex (toInteger localVariableNameIndex)) (ConstantPoolIndex (toInteger localVariableSignatureIndex)) (toInteger localVariableIndex)
+
+-- | Parse runtime visible annotations attribute-specific data
+parseRuntimeVisibleAnnotations :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseRuntimeVisibleAnnotations attributeLength = 
+  fmap (runGet deserializeRuntimeVisibleAnnotations) (getLazyByteString attributeLength)
+  where
+    deserializeRuntimeVisibleAnnotations = do
+      annotationsCount <- getWord16be
+      annotations <- replicateM (fromIntegral annotationsCount) deserializeAnnotation
+      return $! Just (RuntimeVisibleAnnotationsAttribute annotations)
+
+-- | Parse runtime invisible annotations attribute-specific data
+parseRuntimeInvisibleAnnotations :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseRuntimeInvisibleAnnotations attributeLength = 
+  fmap (runGet deserializeRuntimeInvisibleAnnotations) (getLazyByteString attributeLength)
+  where
+    deserializeRuntimeInvisibleAnnotations = do
+      annotationsCount <- getWord16be
+      annotations <- replicateM (fromIntegral annotationsCount) deserializeAnnotation
+      return $! Just (RuntimeInvisibleAnnotationsAttribute annotations)
+
+-- | Parse runtime visible parameter annotations attribute-specific data
+parseRuntimeVisibleParameterAnnotations :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseRuntimeVisibleParameterAnnotations attributeLength = 
+  fmap (runGet deserializeRuntimeVisibleAllParametersAnnotations) (getLazyByteString attributeLength)
+  where
+    deserializeRuntimeVisibleAllParametersAnnotations = do
+      numParameters <- getWord8
+      annotationsForParameters <- replicateM (fromIntegral numParameters) deserializeRuntimeVisibleOneParameterAnnotations
+      return $! Just (RuntimeVisibleParameterAnnotationsAttribute annotationsForParameters)
+    deserializeRuntimeVisibleOneParameterAnnotations = do
+      annotationsCount <- getWord16be
+      replicateM (fromIntegral annotationsCount) deserializeAnnotation
+
+-- | Parse runtime invisible parameter annotations attribute-specific data
+parseRuntimeInvisibleParameterAnnotations :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseRuntimeInvisibleParameterAnnotations attributeLength = 
+  fmap (runGet deserializeRuntimeInvisibleAllParametersAnnotations) (getLazyByteString attributeLength)
+  where
+    deserializeRuntimeInvisibleAllParametersAnnotations = do
+      numParameters <- getWord8
+      annotationsForParameters <- replicateM (fromIntegral numParameters) deserializeRuntimeInvisibleOneParameterAnnotations
+      return $! Just (RuntimeInvisibleParameterAnnotationsAttribute annotationsForParameters)
+    deserializeRuntimeInvisibleOneParameterAnnotations = do
+      annotationsCount <- getWord16be
+      replicateM (fromIntegral annotationsCount) deserializeAnnotation
+
+-- | Parse annotation default attribute-specific data
+parseAnnotationDefault :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseAnnotationDefault attributeLength = 
+  fmap (runGet deserializeAnnotationDefault) (getLazyByteString attributeLength)
+  where
+    deserializeAnnotationDefault = do
+      defaultValue <- deserializeAnnotationElementValue
+      return $! Just (AnnotationDefaultAttribute defaultValue)
+
+-- | Parse bootstrap methods attribute-specific data
+parseBootstrapMethods :: Int64 -- ^ Attribute length
+  -> Get (Maybe Attribute) -- ^ Attribute, if any
+parseBootstrapMethods attributeLength = 
+  fmap (runGet deserializeBootstrapMethods) (getLazyByteString attributeLength)
+  where
+    deserializeBootstrapMethods = do
+      bootstrapMethodsCount <- getWord16be
+      bootstrapMethods <- replicateM (fromIntegral bootstrapMethodsCount) deserializeBootstrapMethodInfo
+      return $! Just (BootstrapMethodsAttribute bootstrapMethods)
+    deserializeBootstrapMethodInfo = do
+      bootstrapMethodRef <- getWord16be
+      argumentsCount <- getWord16be
+      bootstrapArguments <- replicateM (fromIntegral argumentsCount) (fmap (ConstantPoolIndex . toInteger) (getWord16be))
+      return $! BootstrapMethodInfo (ConstantPoolIndex (toInteger bootstrapMethodRef)) bootstrapArguments
 
 -- | Skip attribute
 skipAttribute :: Int64 -- ^ Attribute length
