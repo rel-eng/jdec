@@ -355,4 +355,8 @@ data Instruction = Aaload
   | WideIinc {
     wideIincIndex :: Integer,
     wideIincImmediate :: Integer
-  } deriving Show
+  }
+  | Impdep1
+  | Impdep2
+  | Breakpoint
+  deriving Show

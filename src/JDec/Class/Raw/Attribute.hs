@@ -57,7 +57,7 @@ import JDec.Class.Raw.ExceptionHandlerInfo(ExceptionHandlerInfo)
 import JDec.Bytecode.Raw.Instruction(Instruction)
 
 import Data.Text
-import Data.Map()
+import Data.Map
 
 -- | An attribute.
 data Attribute = ConstantValueAttribute { -- ^ It is an attribute in the attributes table of a field. It represents the value of a constant field. There can be no more than one such attribute in the attributes table of a given field. If the field is static then the constant field is assigned the value referenced by this attribute as part of the initialization of the class or interface declaring the constant field. This occurs prior to the invocation of the class or interface initialization method of that class or interface. If a non-static field has such an attribute, then that attribute must silently be ignored.
@@ -66,7 +66,7 @@ data Attribute = ConstantValueAttribute { -- ^ It is an attribute in the attribu
   | CodeAttribute { -- ^ It is an attribute in the attributes table of a method. It contains the virtual machine instructions and auxiliary information for a single method, instance initialization method, or class or interface initialization method. If the method is either native or abstract, it must not have such an attribute. Otherwise, it must have exactly one such attribute.
     maxStack :: Integer, -- ^ The value gives the maximum depth of the operand stack of this method at any point during execution of the method.
     maxLocals :: Integer, -- ^ The value gives the number of local variables in the local variable array allocated upon invocation of this method, including the local variables used to pass parameters to the method on its invocation. The greatest local variable index for a value of type long or double is maxLocals - 2. The greatest local variable index for a value of any other type is maxLocals - 1.
-    instructions :: [Instruction], -- ^ Instructions
+    instructions :: Map Integer Instruction, -- ^ Instructions
     exceptionHandlers :: [ExceptionHandlerInfo], -- ^ Each entry describes one exception handler in the code array. The order of the handlers is significant.
     codeAttributes :: [Attribute] -- ^ The only attributes that appear in the attributes table of a Code attribute are the LineNumberTable, LocalVariableTable, LocalVariableTypeTable, and StackMapTable attributes.
   }

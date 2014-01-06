@@ -16,6 +16,7 @@ import JDec.Class.Raw.LocalVariableInfo (LocalVariableInfo(LocalVariableInfo))
 import JDec.Class.Raw.LocalVariableTypeInfo (LocalVariableTypeInfo(LocalVariableTypeInfo))
 import JDec.Class.Parse.ParseAnnotation(deserializeAnnotation, deserializeAnnotationElementValue)
 import JDec.Class.Raw.BootstrapMethodInfo (BootstrapMethodInfo(BootstrapMethodInfo))
+import JDec.Class.Parse.ParseBytecode (deserializeBytecode)
 
 import Data.Binary.Get(Get, getWord16be, getWord32be, getLazyByteString, runGet, getWord8)
 import Data.Map as Map (Map, lookup)
@@ -197,12 +198,12 @@ parseCode attributeLength constantPool =
       maxStack <- getWord16be
       maxLocals <- getWord16be
       codeLength <- getWord32be
-      code <- getLazyByteString (fromIntegral codeLength)
+      instructions <- fmap (runGet deserializeBytecode) (getLazyByteString (fromIntegral codeLength))
       exceptionHandlersCount <- getWord16be
       exceptionHandlers <- replicateM (fromIntegral exceptionHandlersCount) deserializeExceptionHandlerInfo
       attributesCount <- getWord16be
       attributes <- replicateM (fromIntegral attributesCount) (deserializeAttribute constantPool)
-      return $! Just (CodeAttribute (fromIntegral maxStack) (fromIntegral maxLocals) [] exceptionHandlers (catMaybes attributes))
+      return $! Just (CodeAttribute (fromIntegral maxStack) (fromIntegral maxLocals) instructions exceptionHandlers (catMaybes attributes))
     deserializeExceptionHandlerInfo = do
       startPC <- getWord16be
       endPC <- getWord16be
