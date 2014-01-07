@@ -6,10 +6,8 @@ import JDec.Bytecode.Raw.Instruction(Instruction(..))
 import JDec.Class.Raw.ConstantPoolIndex (ConstantPoolIndex(ConstantPoolIndex))
 import JDec.Bytecode.Raw.ArrayType(ArrayType(..))
 
-import Data.Binary.Get(Get, isEmpty, getWord8, skip)
+import Data.Binary.Get(Get, isEmpty, getWord8, skip, getWord16be, getWord32be)
 import Data.Map as Map (Map, empty, insert)
-import Data.Bits (shiftL, (.|.))
-import Data.Word(Word8, Word16, Word32)
 import Data.Int(Int8, Int16, Int32)
 import Control.Monad(replicateM, when)
 
@@ -40,9 +38,8 @@ deserializeBytecode = do
         0x2c -> return $! (AloadTwo, 1)
         0x2d -> return $! (AloadThree, 1)
         0xbd -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Anewarray (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Anewarray (ConstantPoolIndex (toInteger index)), 3)
         0xb0 -> return $! (Areturn, 1)
         0xbe -> return $! (Arraylength, 1)
         0x3a -> do
@@ -61,9 +58,8 @@ deserializeBytecode = do
         0x34 -> return $! (Caload, 1)
         0x55 -> return $! (Castore, 1)
         0xc0 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Checkcast (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Checkcast (ConstantPoolIndex (toInteger index)), 3)
         0x90 -> return $! (DoubleToFloat, 1)
         0x8e -> return $! (DoubleToInt, 1)
         0x8f -> return $! (DoubleToLong, 1)
@@ -132,23 +128,17 @@ deserializeBytecode = do
         0x46 -> return $! (FstoreThree, 1)
         0x66 -> return $! (Fsub, 1)
         0xb4 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Getfield (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Getfield (ConstantPoolIndex (toInteger index)), 3)
         0xb2 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Getstatic (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Getstatic (ConstantPoolIndex (toInteger index)), 3)
         0xa7 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Goto (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Goto (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xc8 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          branchByte3 <- getWord8
-          branchByte4 <- getWord8
-          return $! (Gotow (bytesToIntegerOffset branchByte1 branchByte2 branchByte3 branchByte4), 5)
+          branch <- getWord32be
+          return $! (Gotow (toInteger ((fromIntegral branch) :: Int32)), 5)
         0x91 -> return $! (IntToByte, 1)
         0x92 -> return $! (IntToChar, 1)
         0x87 -> return $! (IntToDouble, 1)
@@ -168,69 +158,53 @@ deserializeBytecode = do
         0x08 -> return $! (IconstFive, 1)
         0x6c -> return $! (Idiv, 1)
         0xa5 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfAcmpeq (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfAcmpeq (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xa6 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfAcmpne (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfAcmpne (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x9f -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfIcmpeq (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfIcmpeq (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xa0 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfIcmpne (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfIcmpne (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xa1 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfIcmplt (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfIcmplt (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xa2 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfIcmpge (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfIcmpge (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xa3 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfIcmpgt (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfIcmpgt (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xa4 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (IfIcmple (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (IfIcmple (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x99 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Ifeq (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Ifeq (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x9a -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Ifne (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Ifne (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x9b -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Iflt (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Iflt (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x9c -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Ifge (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Ifge (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x9d -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Ifgt (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Ifgt (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x9e -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Ifle (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Ifle (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xc7 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Ifnonnull (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Ifnonnull (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xc6 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Ifnull (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Ifnull (toInteger ((fromIntegral branch) :: Int16)), 3)
         0x84 -> do
           index <- getWord8
           signedConstVal <- getWord8
@@ -245,33 +219,27 @@ deserializeBytecode = do
         0x68 -> return $! (Imul, 1)
         0x74 -> return $! (Ineg, 1)
         0xc1 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Instanceof (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Instanceof (ConstantPoolIndex (toInteger index)), 3)
         0xba -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
+          index <- getWord16be
           _ <- getWord8
           _ <- getWord8
-          return $! (Invokedynamic (bytesToConstantPoolIndex indexByte1 indexByte2), 5)
+          return $! (Invokedynamic (ConstantPoolIndex (toInteger index)), 5)
         0xb9 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
+          index <- getWord16be
           count <- getWord8
           _ <- getWord8
-          return $! (Invokeinterface (bytesToConstantPoolIndex indexByte1 indexByte2) (toInteger count), 5)
+          return $! (Invokeinterface (ConstantPoolIndex (toInteger index)) (toInteger count), 5)
         0xb7 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Invokespecial (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Invokespecial (ConstantPoolIndex (toInteger index)), 3)
         0xb8 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Invokestatic (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Invokestatic (ConstantPoolIndex (toInteger index)), 3)
         0xb6 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Invokevirtual (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Invokevirtual (ConstantPoolIndex (toInteger index)), 3)
         0x80 -> return $! (Ior, 1)
         0x70 -> return $! (Irem, 1)
         0xac -> return $! (Ireturn, 1)
@@ -288,15 +256,11 @@ deserializeBytecode = do
         0x7c -> return $! (Iushr, 1)
         0x82 -> return $! (Ixor, 1)
         0xa8 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          return $! (Jsr (bytesToShortOffset branchByte1 branchByte2), 3)
+          branch <- getWord16be
+          return $! (Jsr (toInteger ((fromIntegral branch) :: Int16)), 3)
         0xc9 -> do
-          branchByte1 <- getWord8
-          branchByte2 <- getWord8
-          branchByte3 <- getWord8
-          branchByte4 <- getWord8
-          return $! (Jsrw (bytesToIntegerOffset branchByte1 branchByte2 branchByte3 branchByte4), 5)
+          branch <- getWord32be
+          return $! (Jsrw (toInteger ((fromIntegral branch) :: Int32)), 5)
         0x8a -> return $! (LongToDouble, 1)
         0x89 -> return $! (LongToFloat, 1)
         0x88 -> return $! (LongToInt, 1)
@@ -311,13 +275,11 @@ deserializeBytecode = do
           index <- getWord8
           return $! (Ldc (ConstantPoolIndex (toInteger index)), 2)
         0x13 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Ldcw (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Ldcw (ConstantPoolIndex (toInteger index)), 3)
         0x14 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (LdcTwoW (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (LdcTwoW (ConstantPoolIndex (toInteger index)), 3)
         0x6d -> return $! (Ldiv, 1)
         0x16 -> do
           index <- getWord8
@@ -330,17 +292,11 @@ deserializeBytecode = do
         0x75 -> return $! (Lneg, 1)
         0xab -> do
           skipToAlignment currentOffset
-          defaultByte1 <- getWord8
-          defaultByte2 <- getWord8
-          defaultByte3 <- getWord8
-          defaultByte4 <- getWord8
-          nPairs1 <- getWord8
-          nPairs2 <- getWord8
-          nPairs3 <- getWord8
-          nPairs4 <- getWord8
-          let nPairs = bytesToIntegerOffset nPairs1 nPairs2 nPairs3 nPairs4
+          defaultRaw <- getWord32be
+          nPairsRaw <- getWord32be
+          let nPairs = toInteger ((fromIntegral nPairsRaw) :: Int32)
           pairs <- readSwitchPairs nPairs
-          return $! (Lookupswitch (bytesToIntegerOffset defaultByte1 defaultByte2 defaultByte3 defaultByte4) pairs, 1 + (alignmentToSkip currentOffset) + 8 + 8 * (if nPairs >= 0 then nPairs else 0))
+          return $! (Lookupswitch (toInteger ((fromIntegral defaultRaw) :: Int32)) pairs, 1 + (alignmentToSkip currentOffset) + 8 + 8 * (if nPairs >= 0 then nPairs else 0))
         0x81 -> return $! (Lor, 1)
         0x71 -> return $! (Lrem, 1)
         0xad -> return $! (Lreturn, 1)
@@ -359,14 +315,12 @@ deserializeBytecode = do
         0xc2 -> return $! (Monitorenter, 1)
         0xc3 -> return $! (Monitorexit, 1)
         0xc5 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
+          index <- getWord16be
           dimensions <- getWord8
-          return $! (Multianewarray (bytesToConstantPoolIndex indexByte1 indexByte2) (toInteger dimensions), 4)
+          return $! (Multianewarray (ConstantPoolIndex (toInteger index)) (toInteger dimensions), 4)
         0xbb -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (New (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (New (ConstantPoolIndex (toInteger index)), 3)
         0xbc -> do
           atype <- readArrayType
           return $! (NewArray atype, 2)
@@ -374,13 +328,11 @@ deserializeBytecode = do
         0x57 -> return $! (Pop, 1)
         0x58 -> return $! (PopTwo, 1)
         0xb5 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Putfield (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Putfield (ConstantPoolIndex (toInteger index)), 3)
         0xb3 -> do
-          indexByte1 <- getWord8
-          indexByte2 <- getWord8
-          return $! (Putstatic (bytesToConstantPoolIndex indexByte1 indexByte2), 3)
+          index <- getWord16be
+          return $! (Putstatic (ConstantPoolIndex (toInteger index)), 3)
         0xa9 -> do
           index <- getWord8
           return $! (Ret (toInteger index), 2)
@@ -388,27 +340,17 @@ deserializeBytecode = do
         0x35 -> return $! (Saload, 1)
         0x56 -> return $! (Sastore, 1)
         0x11 -> do
-          immediateByte1 <- getWord8
-          immediateByte2 <- getWord8
-          return $! (Sipush (bytesToShortOffset immediateByte1 immediateByte2), 3)
+          immediate <- getWord16be
+          return $! (Sipush (toInteger ((fromIntegral immediate) :: Int16)), 3)
         0x5f -> return $! (Swap, 1)
         0xaa -> do
           skipToAlignment currentOffset
-          defaultByte1 <- getWord8
-          defaultByte2 <- getWord8
-          defaultByte3 <- getWord8
-          defaultByte4 <- getWord8
-          lowByte1 <- getWord8
-          lowByte2 <- getWord8
-          lowByte3 <- getWord8
-          lowByte4 <- getWord8
-          highByte1 <- getWord8
-          highByte2 <- getWord8
-          highByte3 <- getWord8
-          highByte4 <- getWord8
-          let defaultOffset = bytesToIntegerOffset defaultByte1 defaultByte2 defaultByte3 defaultByte4
-          let low = bytesToIntegerOffset lowByte1 lowByte2 lowByte3 lowByte4
-          let high = bytesToIntegerOffset highByte1 highByte2 highByte3 highByte4
+          defaultRaw <- getWord32be
+          lowRaw <- getWord32be
+          highRaw <- getWord32be
+          let defaultOffset = toInteger ((fromIntegral defaultRaw) :: Int32)
+          let low = toInteger ((fromIntegral lowRaw) :: Int32)
+          let high = toInteger ((fromIntegral highRaw) :: Int32)
           when (low > high) (fail ("Invalid low and high index for tableswitch " ++ (show low) ++ ", " ++ (show high)))
           let nOffsets = high - low + 1
           jumpOffsets <- readSwitchOffsets nOffsets
@@ -417,55 +359,42 @@ deserializeBytecode = do
           widenedOpcode <- getWord8
           case widenedOpcode of
             0x15 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideIload (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideIload (toInteger index), 4)
             0x17 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideFload (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideFload (toInteger index), 4)
             0x19 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideAload (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideAload (toInteger index), 4)
             0x16 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideLload (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideLload (toInteger index), 4)
             0x18 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideDload (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideDload (toInteger index), 4)
             0x36 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideIstore (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideIstore (toInteger index), 4)
             0x38 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideFstore (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideFstore (toInteger index), 4)
             0x3a -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideAstore (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideAstore (toInteger index), 4)
             0x37 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideLstore (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideLstore (toInteger index), 4)
             0x39 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideDstore (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideDstore (toInteger index), 4)
             0xa9 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              return $! (WideRet (bytesToShortIndex indexByte1 indexByte2), 4)
+              index <- getWord16be
+              return $! (WideRet (toInteger index), 4)
             0x84 -> do
-              indexByte1 <- getWord8
-              indexByte2 <- getWord8
-              immediateByte1 <- getWord8
-              immediateByte2 <- getWord8
-              return $! (WideIinc (bytesToShortIndex indexByte1 indexByte2) (bytesToShortOffset immediateByte1 immediateByte2), 6)
+              index <- getWord16be
+              immediate <- getWord16be
+              return $! (WideIinc (toInteger index) (toInteger ((fromIntegral immediate) :: Int16)), 6)
             _ -> fail ("Unknown opcode " ++ (show widenedOpcode) ++ " for wide prefix")
         _ -> fail ("Unknown opcode " ++ (show opcode))
 
@@ -491,35 +420,9 @@ readSwitchPairs nPairs = if nPairs > 0 then replicateM (fromIntegral nPairs) rea
 -- | Read one pair of signed 32-bit values
 readSwitchPair :: Get (Integer, Integer) -- ^ Pair of signed 32-bit values
 readSwitchPair = do
-  match1 <- getWord8
-  match2 <- getWord8
-  match3 <- getWord8
-  match4 <- getWord8
-  offset1 <- getWord8
-  offset2 <- getWord8
-  offset3 <- getWord8
-  offset4 <- getWord8
-  return $! (bytesToIntegerOffset match1 match2 match3 match4, bytesToIntegerOffset offset1 offset2 offset3 offset4)
-
--- | Make a ConstantPoolIndex from two unsigned bytes
-bytesToConstantPoolIndex :: Word8 -- ^ First byte
-  -> Word8 -- ^ Second byte
-  -> ConstantPoolIndex -- ^ ConstantPoolIndex
-bytesToConstantPoolIndex indexByte1 indexByte2 = ConstantPoolIndex (toInteger ((shiftL ((fromIntegral indexByte1) :: Word16) 8) .|. (fromIntegral indexByte2)))
-
--- | Make a signed short from two unsigned bytes
-bytesToShortOffset :: Word8 -- ^ First byte
-  -> Word8 -- ^ Second byte
-  -> Integer -- ^ Value of the signed short
-bytesToShortOffset branchByte1 branchByte2 = toInteger ((fromIntegral ((shiftL ((fromIntegral branchByte1) :: Word16) 8) .|. (fromIntegral branchByte2))) :: Int16)
-
--- | Make a signed int from four unsigned bytes
-bytesToIntegerOffset :: Word8 -- ^ First byte
-  -> Word8 -- ^ Second byte
-  -> Word8 -- ^ Third byte
-  -> Word8 -- ^ Fourth byte
-  -> Integer -- ^ Value of the signed int
-bytesToIntegerOffset branchByte1 branchByte2 branchByte3 branchByte4 = toInteger ((fromIntegral ((((shiftL ((fromIntegral branchByte1) :: Word32) 24) .|. (shiftL ((fromIntegral branchByte2) :: Word32) 16)) .|. (shiftL ((fromIntegral branchByte3) :: Word32) 8)) .|. (fromIntegral branchByte4))) :: Int32)
+  matchRaw <- getWord32be
+  offsetRaw <- getWord32be
+  return $! (toInteger ((fromIntegral matchRaw) :: Int32), toInteger ((fromIntegral offsetRaw) :: Int32))
 
 -- | Read ArrayType
 readArrayType :: Get ArrayType -- ^ ArrayType
@@ -544,14 +447,5 @@ readSwitchOffsets nOffsets = if nOffsets > 0 then replicateM (fromIntegral nOffs
 -- | Read signed 32-bit value
 readSwitchOffset :: Get Integer -- ^ Signed 32-bit value
 readSwitchOffset = do
-  offset1 <- getWord8
-  offset2 <- getWord8
-  offset3 <- getWord8
-  offset4 <- getWord8
-  return $! (bytesToIntegerOffset offset1 offset2 offset3 offset4)
-
--- | Make unsigned short from two unsigned bytes
-bytesToShortIndex :: Word8 -- ^ First byte
-  -> Word8 -- ^ Second byte
-  -> Integer -- ^ Value of the signed short
-bytesToShortIndex indexByte1 indexByte2 = toInteger ((shiftL ((fromIntegral indexByte1) :: Word16) 8) .|. (fromIntegral indexByte2))
+  offsetRaw <- getWord32be
+  return $! (toInteger ((fromIntegral offsetRaw) :: Int32))
