@@ -1,5 +1,5 @@
-module JDec.Class.Typesafe.MethodNameAndType (
-MethodNameAndType(MethodNameAndType),
+module JDec.Class.Typesafe.InterfaceMethodNameAndType (
+InterfaceMethodNameAndType(InterfaceMethodNameAndType),
 name,
 descriptor
 ) where
@@ -7,7 +7,7 @@ descriptor
 import Data.Text(Text)
 
 -- | Represents a method, without indicating which class or interface type it belongs to.
-data MethodNameAndType = MethodNameAndType {
+data InterfaceMethodNameAndType = InterfaceMethodNameAndType {
   name :: Text, -- ^ Either the special method name <init> or a valid unqualified name denoting a method.
   descriptor :: Text -- ^ A valid method descriptor.
 } deriving Show
